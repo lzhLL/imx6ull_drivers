@@ -2,14 +2,24 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
+#include <linux/io.h>
+
+
 
 #define		CHARDEVBASE_MAJOR			(200)						//主设备号
 #define		CHARDEVBASE_NAME			"chrdevbase"				//名字
 
 
+static char read_buf[128];						//写缓存
+static char write_buf[128];						//读缓存
+static char kernel_data[] = {"kernel data!"};
+
+
 static int chrdevbase_open(struct inode *inode, struct file *filp)
 {
-	printk("chrdevbase_open\r\n");
+	// printk("chrdevbase_open\r\n");
 
 	return 0;
 }
@@ -17,7 +27,7 @@ static int chrdevbase_open(struct inode *inode, struct file *filp)
 
 static int chrdevbase_release(struct inode *inode, struct file *filp)
 {
-	printk("chrdevbase_release\r\n");
+	// printk("chrdevbase_release\r\n");
 	return 0;
 }
 
@@ -25,7 +35,18 @@ static int chrdevbase_release(struct inode *inode, struct file *filp)
 static ssize_t chrdevbase_read(struct file *file, char __user *buffer, size_t count,
 			 loff_t *ppos)
 {
-	printk("chrdevbase_read\r\n");
+	// printk("chrdevbase_read\r\n");
+	strcpy(read_buf, kernel_data);
+	int ret = copy_to_user(buffer, read_buf, count);		//由应用程序读的多少个字节,内核驱动给应用层发数据
+	if (ret == 0)
+	{
+		
+	}
+	else
+	{
+		
+	}
+
 	return 0;
 }
 
@@ -33,7 +54,19 @@ static ssize_t chrdevbase_read(struct file *file, char __user *buffer, size_t co
 static ssize_t chrdevbase_write(struct file *file, const char __user *buf,
 	size_t count, loff_t *off)
 {
-	printk("chrdevbase_write\r\n");
+	// printk("chrdevbase_write\r\n");
+	int ret = copy_from_user(write_buf, buf, count);	//应用区给内核区发数据
+	if (ret == 0)
+	{
+		printk("kernel receive data:%s\r\n", write_buf);
+	}
+	else
+	{
+		
+	}
+
+
+
 	return 0;
 }
 
@@ -45,7 +78,6 @@ static struct file_operations chrdevbase_fops = {
 	.read 		= chrdevbase_read,
 	.write		= chrdevbase_write,
 };
-
 
 
 /*
