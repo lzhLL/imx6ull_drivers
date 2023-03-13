@@ -24,6 +24,33 @@ static void __iomem *GPIO1_DR;
 static void __iomem *GPIO1_GDIR;
 
 
+
+#define     LEDOFF          0               /* led关闭 */
+#define     LEDON           1               /* led打开 */
+
+/* LED灯打开/关闭 */
+static void led_switch(u8 state)
+{
+    u32 val;
+    if (state == LEDON)
+    {
+        /* 灯打开  */
+        val = readl(GPIO1_DR);
+        val &= ~(1 << 3);            /* bit3置0,打开LED灯 */
+        writel(val, GPIO1_DR);        
+    }
+    else
+    {
+        /* 灯关闭 */
+        val = readl(GPIO1_DR);
+        val |= (1 << 3);            /* bit3置1关闭LED灯 */
+        writel(val, GPIO1_DR);        
+    }
+
+    return ;
+}
+
+
 static int led_drv_open(struct inode *inode, struct file *file)
 {
     return 0;
@@ -32,6 +59,29 @@ static int led_drv_open(struct inode *inode, struct file *file)
 
 static ssize_t led_drv_write(struct file *file, const char __user *buf, size_t len, loff_t *pos)
 {
+    int ret = 0;
+    unsigned char data_buf[1] = {0};
+
+    ret = copy_from_user(data_buf, buf, len);
+    if (ret < 0)
+    {
+        printk("kernel write failed\r\n");
+        return -EFAULT; 
+    }
+
+    led_switch(data_buf[0]);    //判断灯开关
+    if (data_buf[0])
+    {
+        printk("LED ON!\r\n");
+    }
+    else
+    {
+        printk("LED OFF!\r\n");
+    }
+    
+    
+
+
 
     return 0;
 }
@@ -80,7 +130,7 @@ static int __init led_drv_init(void)
     writel(val, GPIO1_GDIR);
 
     val = readl(GPIO1_DR);
-    val &= ~(1 << 3);            /* bit3置0,打开LED灯 */
+    val |= (1 << 3);            /* bit3置1,关闭LED灯 */
     writel(val, GPIO1_DR);
 
 	//注册字符设备
@@ -125,6 +175,7 @@ module_exit(led_drv_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("lizh");
+
 
 
 
