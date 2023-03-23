@@ -6,11 +6,12 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/cdev.h> 
+#include <linux/device.h>
 
-
-#define         NEWCHRLED_MAJOR               (200)
 #define         NEWCHRLED_NAME                "newchrled"
 #define         NEWCHRLED_COUT                 (1)
+
+
 /* 寄存器物理地址 */
 #define CCM_CCGR1_BASE              		(0X020C406C)
 #define SW_MUX_GPIO1_IO03_BASE      		(0X020E0068)
@@ -24,7 +25,7 @@ static void __iomem *SW_MUX_GPIO1_IO03;
 static void __iomem *SW_PAD_GPIO1_IO03;
 static void __iomem *GPIO1_DR;
 static void __iomem *GPIO1_GDIR;
-
+ 
 
 
 #define     LEDOFF          0               /* led关闭 */
@@ -32,10 +33,12 @@ static void __iomem *GPIO1_GDIR;
 
 /* LED设备结构体 */
 typedef struct newchrled_dev{
-    struct cdev cdev;   /* 字符设备 */
-    dev_t   devid;      /* 设备号 */
-    int     major;      /*主设备号 */
-    int     minor;      /* 次设备号 */
+    struct cdev cdev;           /* 字符设备 */
+    struct class *class;        /* 类 */
+    struct device *device;      /* 设备 */
+    dev_t   devid;              /* 设备号 */
+    int     major;              /*主设备号 */
+    int     minor;              /* 次设备号 */
 }newchrled_dev_t;
 
 newchrled_dev_t newchrled;      /* led设备 */
@@ -63,8 +66,9 @@ static void led_switch(u8 state)
 }
 
 
-static int newchrled_open(struct inode *inode, struct file *file)
+static int newchrled_open(struct inode *inode, struct file *filp)
 {
+    filp->private_data = &newchrled;
     return 0;
 }
 
@@ -90,17 +94,14 @@ static ssize_t newchrled_write(struct file *file, const char __user *buf, size_t
     {
         printk("LED OFF!\r\n");
     }
-    
-    
-
-
 
     return 0;
 }
 
 
-static int newchrled_release(struct inode *inode, struct file *file)
+static int newchrled_release(struct inode *inode, struct file *filp)
 {
+    struct newchrled_dev* dev = (struct newchrled_dev*)filp->private_data;
     return 0;
 }
 
@@ -145,6 +146,8 @@ static int __init newchrled_init(void)
     val |= (1 << 3);            /* bit3置1,关闭LED灯 */
     writel(val, GPIO1_DR);
 
+    newchrled.major = 0;        //手动清零，表示由系统申请设备号 
+
 	//2.注册字符设备
     if (newchrled.major)    //如果给定主设备号
     {
@@ -157,22 +160,57 @@ static int __init newchrled_init(void)
         newchrled.major = MAJOR(newchrled.devid);
         newchrled.minor = MINOR(newchrled.devid);
     }
+    
     if (ret < 0)
     {
         printk("newchrled chrdev_region err");
-        return -1;
+        // return -1;
+        goto fail_devid;
     }
     printk("newchrled major=%d, minor = %d\r\n", newchrled.major, newchrled.minor);
 
     /* 3.注册字符设备 */
     newchrled.cdev.owner = THIS_MODULE;
     cdev_init(&newchrled.cdev, &newchrled_fops);
+
     ret = cdev_add(&newchrled.cdev, newchrled.devid, NEWCHRLED_COUT);
+    if (ret < 0)
+    {
+        goto fail_cdev;
+    }
+    
+
+    /* 4.自动创建设备节点 */
+    newchrled.class = class_create(THIS_MODULE, NEWCHRLED_NAME);
+    if (IS_ERR(newchrled.class))
+    {
+        ret = PTR_ERR(newchrled.class);
+        goto fail_class;
+        // return PTR_ERR(newchrled.class);
+    }
+    
+    newchrled.device = device_create(newchrled.class, NULL, newchrled.devid, NULL, NEWCHRLED_NAME);
+    if (IS_ERR(newchrled.device))
+    {
+        ret = PTR_ERR(newchrled.device);
+        goto fail_device;
+    }
+
 
 
 	printk("newchrled_init\r\n");
 
     return 0;
+
+fail_device:
+    device_destroy(newchrled.class, newchrled.devid);
+fail_class:
+    cdev_del(&newchrled.cdev);
+fail_cdev:
+    unregister_chrdev_region(newchrled.devid, NEWCHRLED_COUT);
+fail_devid:
+    return ret;
+
 }
 
 /* 出口*/
@@ -198,6 +236,13 @@ static void __exit newchrled_exit(void)
 	//卸载字符设备
 	unregister_chrdev_region(newchrled.devid, NEWCHRLED_COUT);
 	
+
+    //先摧毁设备
+    device_destroy(newchrled.class, newchrled.devid);
+
+    //摧毁类
+    class_destroy(newchrled.class);
+
     return ;
 }
 
@@ -208,9 +253,3 @@ module_exit(newchrled_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("lizh");
-
-
-
-
-
-
